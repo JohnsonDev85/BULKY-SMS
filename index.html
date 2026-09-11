@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bulk SMS Sender - Beem</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+<!-- Firebase (kwa kuhifadhi orodha za mawasiliano) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<!-- SheetJS (kusoma faili za Excel) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="eyebrow">ZANA HURU &middot; BEEM SMS</div>
+      <h1>Tuma SMS kwa Watu Wengi</h1>
+      <p>Pakia majina na namba, andika ujumbe wako, tuma kwa wote mara moja.</p>
+    </header>
+
+    <div class="panel">
+      <div class="section-title">1. Chagua Sender Name <div class="divider"></div></div>
+      <div class="field-row">
+        <div class="field">
+          <select id="senderSelect" onchange="onSenderChange()">
+            <option value="JOHCARDS">JOHCARDS</option>
+            <option value="KIDESEC">KIDESEC</option>
+            <option value="custom">Nyingine (andika mwenyewe)...</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row" id="customSenderRow" style="display:none;">
+        <div class="field">
+          <label for="customSender">Sender Name Nyingine</label>
+          <input type="text" id="customSender" placeholder="mfano: KIDEDUKA" maxlength="11" />
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="section-title">2. Majina na Namba <div class="divider"></div></div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="excelFile">Pakia kutoka Excel (vichwa: Jina, Namba)</label>
+          <input type="file" id="excelFile" accept=".xlsx,.xls,.csv" onchange="handleExcelUpload(event)" />
+        </div>
+      </div>
+
+      <div class="or-line"><span>au andika/hariri moja kwa moja</span></div>
+
+      <div class="field-row">
+        <div class="field">
+          <textarea id="recipientsInput" placeholder="Jina, Namba - moja kwa kila mstari, mfano:&#10;Amina Juma, 0712345678&#10;Baraka Mushi, 0755123456"></textarea>
+          <div class="hint">Andika: Jina, Namba (ukitenganisha kwa comma), mstari mmoja kwa kila mtu.</div>
+        </div>
+      </div>
+
+      <div class="or-line"><span>hifadhi au pakia orodha iliyohifadhiwa</span></div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="listNameInput">Jina la Orodha (kuhifadhi)</label>
+          <input type="text" id="listNameInput" placeholder="mfano: Wazazi wa Kidegembye" />
+        </div>
+        <div class="field">
+          <label for="savedListsSelect">Pakia Orodha Iliyohifadhiwa</label>
+          <select id="savedListsSelect" onchange="loadSavedList()">
+            <option value="">— Chagua orodha —</option>
+          </select>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn ghost" onclick="saveCurrentList()">Hifadhi Orodha Hii</button>
+        <span class="status-msg" id="listStatusMsg"></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="section-title">3. Andika Ujumbe <div class="divider"></div></div>
+      <div class="field-row">
+        <div class="field">
+          <textarea id="messageInput" placeholder="Andika ujumbe wako hapa. Tumia [JINA] kama unataka jina la mtu liingizwe moja kwa moja.&#10;Mfano: Habari [JINA]! Kesho tuna kikao saa tatu asubuhi shuleni."></textarea>
+          <div class="hint">Tumia <strong>[JINA]</strong> ndani ya ujumbe - itabadilishwa na jina halisi la kila mpokeaji.</div>
+          <div class="hint" id="charCount">Herufi: 0/160 (SMS 1)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn" onclick="sendBulkSMS()" id="sendBtn">Tuma kwa Wote</button>
+      <span class="status-msg" id="statusMsg"></span>
+    </div>
+
+    <div id="resultsSection" style="display:none;">
+      <div class="section-title" style="margin-top:30px;">Matokeo <div class="divider"></div></div>
+      <div class="results-table" id="resultsTable"></div>
+    </div>
+  </div>
+
+<script src="script.js"></script>
+</body>
+</html>
