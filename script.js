@@ -69,6 +69,7 @@ function handleExcelUpload(event){
 // ============ ORODHA ZILIZOHIFADHIWA (Firestore) ============
 async function loadSavedListsDropdown(){
   const select = document.getElementById('savedListsSelect');
+  if(!select) return;
   try{
     const snap = await db.collection('contactLists').orderBy('createdAt', 'desc').get();
     select.innerHTML = '<option value="">— Chagua orodha —</option>';
@@ -85,7 +86,7 @@ async function loadSavedListsDropdown(){
 
 async function saveCurrentList(){
   const listName = document.getElementById('listNameInput').value.trim();
-  const recipients = parseRecipients(); // Sasa inakubali hata ikiwa na majina pekee
+  const recipients = parseRecipients();
   const statusMsg = document.getElementById('listStatusMsg');
 
   if(!listName){
@@ -140,6 +141,7 @@ function onSenderChange(){
 
 function getSelectedSender(){
   const select = document.getElementById('senderSelect');
+  if(!select) return 'INFO';
   if(select.value === 'custom'){
     return document.getElementById('customSender').value.trim().toUpperCase();
   }
@@ -148,7 +150,9 @@ function getSelectedSender(){
 
 // ============ HESABU HERUFI ============
 function updateCharCount(){
-  const len = document.getElementById('messageInput').value.length;
+  const msgEl = document.getElementById('messageInput');
+  if(!msgEl) return;
+  const len = msgEl.value.length;
   let parts, limit;
   if(len <= 160){
     parts = len === 0 ? 0 : 1;
@@ -178,7 +182,7 @@ function parseRecipients(){
     const name = parts[0] || '';
     const phone = parts[1] || '';
     return { name, phone };
-  }).filter(r => r.name.length > 0); // Inakubali mradi jina lipo
+  }).filter(r => r.name.length > 0);
 }
 
 function normalizePhone(phone){
@@ -189,11 +193,16 @@ function normalizePhone(phone){
   return clean;
 }
 
-// ============ TUMA SMS MOJA ============
+// ============ TUMA SMS MOJA (Inapita CORS Proxy) ============
 async function sendOneSMS(sender, phone, message){
   const authHeader = 'Basic ' + btoa(`${BEEM_API_KEY}:${BEEM_SECRET_KEY}`);
+  
+  // CORS Proxy URL kuzuia Browser Blocking
+  const targetUrl = 'https://apisms.beem.africa/v1/send';
+  const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(targetUrl);
+
   try{
-    const response = await fetch('https://apisms.beem.africa/v1/send', {
+    const response = await fetch(proxyUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -206,9 +215,15 @@ async function sendOneSMS(sender, phone, message){
         recipients: [{ recipient_id: "1", dest_addr: normalizePhone(phone) }]
       })
     });
+
     const data = await response.json();
-    return { ok: response.ok, data };
+    console.log("Beem API Response:", data);
+
+    // Kagua kama Beem inarudisha mafanikio (successful: true au code: 100)
+    const isSuccess = response.ok && (data.successful === true || data.code === 100);
+    return { ok: isSuccess, data };
   }catch(err){
+    console.error("SMS Send Error:", err);
     return { ok: false, error: err.message };
   }
 }
@@ -222,7 +237,6 @@ async function sendBulkSMS(){
   }
 
   const allRecipients = parseRecipients();
-  // Filter walio na namba za simu pekee kabla ya kutuma SMS
   const validRecipients = allRecipients.filter(r => r.phone && normalizePhone(r.phone).length >= 10);
 
   if(validRecipients.length === 0){
