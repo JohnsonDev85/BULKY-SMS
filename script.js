@@ -34,16 +34,13 @@ function handleExcelUpload(event){
       }
 
       const lines = rows.map(row => {
-        // Find name column dynamically
-        const nameKey = Object.keys(row).find(k => 
+        const nameKey = Object.keys(row).find(k =>
           ['jina', 'name', 'first name', 'first_name', 'full name'].includes(k.toLowerCase().trim())
         );
-        const lastNameKey = Object.keys(row).find(k => 
+        const lastNameKey = Object.keys(row).find(k =>
           ['last name', 'last_name', 'jina la pili'].includes(k.toLowerCase().trim())
         );
-        
-        // Find phone column dynamically
-        const phoneKey = Object.keys(row).find(k => 
+        const phoneKey = Object.keys(row).find(k =>
           ['namba', 'phone', 'phone number', 'mobile', 'namba ya simu', 'phone_number'].includes(k.toLowerCase().trim())
         );
 
@@ -176,7 +173,7 @@ if(msgInput){
 function parseRecipients(){
   const raw = document.getElementById('recipientsInput').value;
   const lines = raw.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-  
+
   return lines.map(line => {
     const parts = line.split(',').map(p => p.trim());
     const name = parts[0] || '';
@@ -193,16 +190,15 @@ function normalizePhone(phone){
   return clean;
 }
 
-// ============ TUMA SMS MOJA (Inapita CORS Proxy) ============
+// ============ TUMA SMS MOJA ============
+// NB: Beem HAIZUII maombi kutoka kivinjari (hakuna CORS) - proxy ya nje
+// (kama corsproxy.io) SIYO lazima na inaweza kuondoa "Authorization" header,
+// ndiyo maana ilisababisha SMS zote kushindwa bila credits kupungua.
 async function sendOneSMS(sender, phone, message){
   const authHeader = 'Basic ' + btoa(`${BEEM_API_KEY}:${BEEM_SECRET_KEY}`);
-  
-  // CORS Proxy URL kuzuia Browser Blocking
-  const targetUrl = 'https://apisms.beem.africa/v1/send';
-  const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(targetUrl);
 
   try{
-    const response = await fetch(proxyUrl, {
+    const response = await fetch('https://apisms.beem.africa/v1/send', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -219,9 +215,7 @@ async function sendOneSMS(sender, phone, message){
     const data = await response.json();
     console.log("Beem API Response:", data);
 
-    // Kagua kama Beem inarudisha mafanikio (successful: true au code: 100)
-    const isSuccess = response.ok && (data.successful === true || data.code === 100);
-    return { ok: isSuccess, data };
+    return { ok: response.ok, data };
   }catch(err){
     console.error("SMS Send Error:", err);
     return { ok: false, error: err.message };
@@ -268,7 +262,10 @@ async function sendBulkSMS(){
     const personalizedMessage = messageTemplate.replace(/\[JINA\]/g, r.name);
     const result = await sendOneSMS(sender, r.phone, personalizedMessage);
 
-    if(result.ok){ sent++; } else { failed++; }
+    if(result.ok){ sent++; } else {
+      failed++;
+      console.error(`SMS kwa ${r.name} (${r.phone}) imeshindwa:`, result.data || result.error);
+    }
 
     const row = document.createElement('div');
     row.className = 'result-row';
