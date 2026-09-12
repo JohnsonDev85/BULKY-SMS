@@ -1,11 +1,8 @@
 // ============ BEEM CONFIG ============
-// !! MUHIMU !! Hii ni kwa MAJARIBIO/MATUMIZI YAKO BINAFSI TU (siyo ukurasa wa umma).
-// Usishiriki link ya Pen hii na mtu yeyote asiyekusudiwa, kwa sababu funguo zinaonekana
-// wazi kwenye msimbo huu.
 const BEEM_API_KEY = "cd9893f5aadb3b83";
 const BEEM_SECRET_KEY = "NzAzMjhlYmZhMzI3YmY1OGMwNDU3ZDBjNTQ1Mjg0MzJjYjIxZDZmOWZlYmVlNmFlZWM3ZjlmYTA5MDMwNDA2NA==";
 
-// ============ FIREBASE CONFIG (sawa na miradi mingine ya JOHCARDS) ============
+// ============ FIREBASE CONFIG ============
 const firebaseConfig = {
   apiKey: "AIzaSyBhh3nIzAWyvT47HQ-hh6umjqoCMYBI1Lk",
   authDomain: "johcards-2db9b.firebaseapp.com",
@@ -29,14 +26,35 @@ function handleExcelUpload(event){
       const workbook = XLSX.read(data, { type: 'array' });
       const firstSheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[firstSheetName];
-      const rows = XLSX.utils.sheet_to_json(sheet); // inatumia safu ya kwanza kama headers
+      const rows = XLSX.utils.sheet_to_json(sheet);
+
+      if(rows.length === 0){
+        alert("Faili halina data yoyote!");
+        return;
+      }
 
       const lines = rows.map(row => {
-        // Kubali majina tofauti ya column (Jina/jina/Name, Namba/namba/Phone)
-        const name = row['Jina'] || row['jina'] || row['Name'] || row['name'] || '';
-        const phone = row['Namba'] || row['namba'] || row['Phone'] || row['phone'] || '';
-        return `${name}, ${phone}`;
-      }).filter(line => line.trim() !== ',');
+        // Find name column dynamically
+        const nameKey = Object.keys(row).find(k => 
+          ['jina', 'name', 'first name', 'first_name', 'full name'].includes(k.toLowerCase().trim())
+        );
+        const lastNameKey = Object.keys(row).find(k => 
+          ['last name', 'last_name', 'jina la pili'].includes(k.toLowerCase().trim())
+        );
+        
+        // Find phone column dynamically
+        const phoneKey = Object.keys(row).find(k => 
+          ['namba', 'phone', 'phone number', 'mobile', 'namba ya simu', 'phone_number'].includes(k.toLowerCase().trim())
+        );
+
+        let name = nameKey ? row[nameKey] : '';
+        if(lastNameKey && row[lastNameKey]){
+          name = `${name} ${row[lastNameKey]}`.trim();
+        }
+        const phone = phoneKey ? row[phoneKey] : '';
+
+        return `${name}${phone ? ', ' + phone : ''}`;
+      }).filter(line => line.trim().length > 0);
 
       document.getElementById('recipientsInput').value = lines.join('\n');
       document.getElementById('listStatusMsg').textContent = `Watu ${lines.length} wamepakiwa kutoka Excel.`;
@@ -67,15 +85,15 @@ async function loadSavedListsDropdown(){
 
 async function saveCurrentList(){
   const listName = document.getElementById('listNameInput').value.trim();
-  const recipients = parseRecipients();
+  const recipients = parseRecipients(); // Sasa inakubali hata ikiwa na majina pekee
   const statusMsg = document.getElementById('listStatusMsg');
 
   if(!listName){
-    alert('Andika jina la orodha kwanza (mfano: Wazazi wa Kidegembye).');
+    alert('Andika jina la orodha kwanza (mfano: Ustawi Kidegembye).');
     return;
   }
   if(recipients.length === 0){
-    alert('Hakuna majina/namba za kuhifadhi - jaza sehemu ya 2 kwanza.');
+    alert('Hakuna majina wala namba za kuhifadhi - andika kwenye sehemu ya 2 kwanza.');
     return;
   }
 
@@ -104,7 +122,7 @@ async function loadSavedList(){
     const doc = await db.collection('contactLists').doc(listId).get();
     if(!doc.exists) return;
     const data = doc.data();
-    const lines = data.recipients.map(r => `${r.name}, ${r.phone}`);
+    const lines = data.recipients.map(r => r.phone ? `${r.name}, ${r.phone}` : r.name);
     document.getElementById('recipientsInput').value = lines.join('\n');
     document.getElementById('listStatusMsg').textContent = `Orodha "${data.name}" imepakiwa (watu ${lines.length}).`;
   }catch(err){
@@ -117,7 +135,7 @@ async function loadSavedList(){
 function onSenderChange(){
   const select = document.getElementById('senderSelect');
   const customRow = document.getElementById('customSenderRow');
-  customRow.style.display = select.value === 'custom' ? 'flex' : 'none';
+  if(customRow) customRow.style.display = select.value === 'custom' ? 'flex' : 'none';
 }
 
 function getSelectedSender(){
@@ -128,7 +146,7 @@ function getSelectedSender(){
   return select.value;
 }
 
-// ============ HESABU HERUFI (kama Beem/mitandao halisi) ============
+// ============ HESABU HERUFI ============
 function updateCharCount(){
   const len = document.getElementById('messageInput').value.length;
   let parts, limit;
@@ -139,20 +157,28 @@ function updateCharCount(){
     parts = Math.ceil(len / 153);
     limit = parts * 153;
   }
-  document.getElementById('charCount').textContent =
-    `Herufi: ${len}/${limit} (SMS ${parts || 1})`;
+  const charCountEl = document.getElementById('charCount');
+  if(charCountEl){
+    charCountEl.textContent = `Herufi: ${len}/${limit} (SMS ${parts || 1})`;
+  }
 }
-document.getElementById('messageInput').addEventListener('input', updateCharCount);
-updateCharCount(); // onyesha 0 mara ukurasa unapopakia
+const msgInput = document.getElementById('messageInput');
+if(msgInput){
+  msgInput.addEventListener('input', updateCharCount);
+  updateCharCount();
+}
 
 // ============ PARSE RECIPIENTS ============
 function parseRecipients(){
   const raw = document.getElementById('recipientsInput').value;
   const lines = raw.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  
   return lines.map(line => {
     const parts = line.split(',').map(p => p.trim());
-    return { name: parts[0] || '', phone: parts[1] || '' };
-  }).filter(r => r.name && r.phone);
+    const name = parts[0] || '';
+    const phone = parts[1] || '';
+    return { name, phone };
+  }).filter(r => r.name.length > 0); // Inakubali mradi jina lipo
 }
 
 function normalizePhone(phone){
@@ -195,9 +221,12 @@ async function sendBulkSMS(){
     return;
   }
 
-  const recipients = parseRecipients();
-  if(recipients.length === 0){
-    alert('Andika majina na namba za wapokeaji angalau mmoja.');
+  const allRecipients = parseRecipients();
+  // Filter walio na namba za simu pekee kabla ya kutuma SMS
+  const validRecipients = allRecipients.filter(r => r.phone && normalizePhone(r.phone).length >= 10);
+
+  if(validRecipients.length === 0){
+    alert('Hakuna wapokeaji wenye namba za simu halali! Jaza namba za simu kwanza.');
     return;
   }
 
@@ -218,9 +247,9 @@ async function sendBulkSMS(){
 
   let sent = 0, failed = 0;
 
-  for(let i = 0; i < recipients.length; i++){
-    const r = recipients[i];
-    statusMsg.textContent = `Inatuma ${i + 1}/${recipients.length}...`;
+  for(let i = 0; i < validRecipients.length; i++){
+    const r = validRecipients[i];
+    statusMsg.textContent = `Inatuma ${i + 1}/${validRecipients.length}...`;
 
     const personalizedMessage = messageTemplate.replace(/\[JINA\]/g, r.name);
     const result = await sendOneSMS(sender, r.phone, personalizedMessage);
