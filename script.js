@@ -43,13 +43,22 @@ function handleExcelUpload(event){
         const phoneKey = Object.keys(row).find(k =>
           ['namba', 'phone', 'phone number', 'mobile', 'namba ya simu', 'phone_number'].includes(k.toLowerCase().trim())
         );
+        // Safu ya kodi (namba ya getini)
+        const kodiKey = Object.keys(row).find(k =>
+          ['kodi', 'code'].includes(k.toLowerCase().trim())
+        );
 
         let name = nameKey ? row[nameKey] : '';
         if(lastNameKey && row[lastNameKey]){
           name = `${name} ${row[lastNameKey]}`.trim();
         }
         const phone = phoneKey ? row[phoneKey] : '';
+        const kodi = kodiKey ? String(row[kodiKey]).trim() : '';
 
+        // Ikiwa kuna kodi: jina, simu, kodi (simu inaweza kuwa tupu lakini nafasi yake inabaki)
+        if(kodi){
+          return `${name}, ${phone}, ${kodi}`;
+        }
         return `${name}${phone ? ', ' + phone : ''}`;
       }).filter(line => line.trim().length > 0);
 
@@ -120,7 +129,12 @@ async function loadSavedList(){
     const doc = await db.collection('contactLists').doc(listId).get();
     if(!doc.exists) return;
     const data = doc.data();
-    const lines = data.recipients.map(r => r.phone ? `${r.name}, ${r.phone}` : r.name);
+    const lines = data.recipients.map(r => {
+      if(r.code){
+        return `${r.name}, ${r.phone || ''}, ${r.code}`;
+      }
+      return r.phone ? `${r.name}, ${r.phone}` : r.name;
+    });
     document.getElementById('recipientsInput').value = lines.join('\n');
     document.getElementById('listStatusMsg').textContent = `Orodha "${data.name}" imepakiwa (watu ${lines.length}).`;
   }catch(err){
@@ -170,6 +184,7 @@ if(msgInput){
 }
 
 // ============ PARSE RECIPIENTS ============
+// Kila mstari: jina, simu, kodi (kodi ni hiari)
 function parseRecipients(){
   const raw = document.getElementById('recipientsInput').value;
   const lines = raw.split('\n').map(l => l.trim()).filter(l => l.length > 0);
@@ -178,7 +193,8 @@ function parseRecipients(){
     const parts = line.split(',').map(p => p.trim());
     const name = parts[0] || '';
     const phone = parts[1] || '';
-    return { name, phone };
+    const code = parts[2] || '';
+    return { name, phone, code };
   }).filter(r => r.name.length > 0);
 }
 
@@ -244,6 +260,8 @@ async function sendBulkSMS(){
     return;
   }
 
+  const ujumbeUnatumiaKodi = /\[KODI\]/i.test(messageTemplate);
+
   const sendBtn = document.getElementById('sendBtn');
   const statusMsg = document.getElementById('statusMsg');
   const resultsSection = document.getElementById('resultsSection');
@@ -259,7 +277,23 @@ async function sendBulkSMS(){
     const r = validRecipients[i];
     statusMsg.textContent = `Inatuma ${i + 1}/${validRecipients.length}...`;
 
-    const personalizedMessage = messageTemplate.replace(/\[JINA\]/g, r.name);
+    // Ujumbe unahitaji kodi lakini mtu huyu hana: usitume
+    if(ujumbeUnatumiaKodi && !r.code){
+      failed++;
+      const rowNoCode = document.createElement('div');
+      rowNoCode.className = 'result-row';
+      rowNoCode.innerHTML = `
+        <span class="r-name">${escapeHtml(r.name)}</span>
+        <span class="r-phone">${escapeHtml(r.phone)}</span>
+        <span class="r-status fail">✕ Hana kodi</span>
+      `;
+      resultsTable.appendChild(rowNoCode);
+      continue;
+    }
+
+    const personalizedMessage = messageTemplate
+      .replace(/\[JINA\]/gi, r.name)
+      .replace(/\[KODI\]/gi, r.code);
     const result = await sendOneSMS(sender, r.phone, personalizedMessage);
 
     if(result.ok){ sent++; } else {
