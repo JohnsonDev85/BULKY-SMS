@@ -1,6 +1,7 @@
 // ============ BEEM CONFIG ============
-const BEEM_API_KEY = "cd9893f5aadb3b83";
-const BEEM_SECRET_KEY = "NzAzMjhlYmZhMzI3YmY1OGMwNDU3ZDBjNTQ1Mjg0MzJjYjIxZDZmOWZlYmVlNmFlZWM3ZjlmYTA5MDMwNDA2NA==";
+// WEKA FUNGUO ZAKO MPYA HAPA (badilisha XXXX)
+const BEEM_API_KEY = "XXXX";      // WEKA KEY YAKO HAPA
+const BEEM_SECRET_KEY = "XXXX";   // WEKA SECRET YAKO HAPA
 
 // ============ FIREBASE CONFIG ============
 const firebaseConfig = {
@@ -13,6 +14,20 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+
+// ============ NGUZO ZA ZIADA (kutoka Excel) ============
+// Kila nguzo baada ya jina na namba inakuwa alama ya ujumbe, mfano:
+// nguzo "kiasi" -> [KIASI], nguzo "kodi" -> [KODI]
+let columnHeaders = [];
+
+// Kama hakuna nguzo za Excel, tunaruhusu safu ya tatu iwe [KODI] (kama zamani)
+function headersZaSasa(){
+  return columnHeaders.length ? columnHeaders : ['KODI'];
+}
+
+function escapeRegExp(s){
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 // ============ EXCEL UPLOAD ============
 function handleExcelUpload(event){
@@ -27,43 +42,46 @@ function handleExcelUpload(event){
       const firstSheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[firstSheetName];
       const rows = XLSX.utils.sheet_to_json(sheet);
+      const headerRow = (XLSX.utils.sheet_to_json(sheet, { header: 1 })[0] || []).map(h => String(h));
 
       if(rows.length === 0){
         alert("Faili halina data yoyote!");
         return;
       }
 
-      const lines = rows.map(row => {
-        const nameKey = Object.keys(row).find(k =>
-          ['jina', 'name', 'first name', 'first_name', 'full name'].includes(k.toLowerCase().trim())
-        );
-        const lastNameKey = Object.keys(row).find(k =>
-          ['last name', 'last_name', 'jina la pili'].includes(k.toLowerCase().trim())
-        );
-        const phoneKey = Object.keys(row).find(k =>
-          ['namba', 'phone', 'phone number', 'mobile', 'namba ya simu', 'phone_number'].includes(k.toLowerCase().trim())
-        );
-        // Safu ya kodi (namba ya getini)
-        const kodiKey = Object.keys(row).find(k =>
-          ['kodi', 'code'].includes(k.toLowerCase().trim())
-        );
+      const keys = headerRow.filter(h => h.trim());
+      const findKey = (list) => keys.find(k => list.includes(k.toLowerCase().trim()));
 
-        let name = nameKey ? row[nameKey] : '';
+      const nameKey = findKey(['jina', 'majina', 'name', 'first name', 'first_name', 'full name', 'jina kamili']);
+      const lastNameKey = findKey(['last name', 'last_name', 'jina la pili']);
+      const phoneKey = findKey(['namba ya simu', 'namba za simu', 'namba', 'simu', 'phone', 'phone number', 'mobile', 'phone_number']);
+
+      // Nguzo zote zilizobaki ni nguzo za ziada (kiasi, ahadi, baki, kodi, aina ya kadi...)
+      const extraKeys = keys.filter(k => k !== nameKey && k !== lastNameKey && k !== phoneKey);
+      columnHeaders = extraKeys.map(k => k.trim().toUpperCase());
+
+      const lines = [];
+      rows.forEach(row => {
+        let name = nameKey ? String(row[nameKey] ?? '').trim() : '';
         if(lastNameKey && row[lastNameKey]){
-          name = `${name} ${row[lastNameKey]}`.trim();
+          name = `${name} ${String(row[lastNameKey]).trim()}`.trim();
         }
-        const phone = phoneKey ? row[phoneKey] : '';
-        const kodi = kodiKey ? String(row[kodiKey]).trim() : '';
+        const phone = phoneKey ? String(row[phoneKey] ?? '').trim() : '';
+        if(!name && !phone) return;
 
-        // Ikiwa kuna kodi: jina, simu, kodi (simu inaweza kuwa tupu lakini nafasi yake inabaki)
-        if(kodi){
-          return `${name}, ${phone}, ${kodi}`;
+        const extras = extraKeys.map(k => String(row[k] ?? '').trim());
+        if(extras.length){
+          // Tab inatumika kutenganisha, kwa sababu kiasi kinaweza kuwa na koma (1,000,000)
+          lines.push([name, phone, ...extras].join('\t'));
+        }else{
+          lines.push(`${name}${phone ? ', ' + phone : ''}`);
         }
-        return `${name}${phone ? ', ' + phone : ''}`;
-      }).filter(line => line.trim().length > 0);
+      });
 
       document.getElementById('recipientsInput').value = lines.join('\n');
-      document.getElementById('listStatusMsg').textContent = `Watu ${lines.length} wamepakiwa kutoka Excel.`;
+      const alama = ['[JINA]'].concat(columnHeaders.map(h => `[${h}]`)).join(' ');
+      document.getElementById('listStatusMsg').textContent =
+        `Watu ${lines.length} wamepakiwa kutoka Excel. Alama unazoweza kutumia: ${alama}`;
     }catch(err){
       console.error(err);
       alert('Imeshindikana kusoma faili la Excel: ' + err.message);
@@ -108,6 +126,7 @@ async function saveCurrentList(){
   try{
     await db.collection('contactLists').add({
       name: listName,
+      columns: columnHeaders,
       recipients: recipients,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
@@ -129,14 +148,26 @@ async function loadSavedList(){
     const doc = await db.collection('contactLists').doc(listId).get();
     if(!doc.exists) return;
     const data = doc.data();
+
+    // Nguzo za ziada: mpya (columns) au za zamani (code -> KODI)
+    let cols = Array.isArray(data.columns) ? data.columns.slice() : [];
+    const anyCode = data.recipients.some(r => r.code || (r.fields && r.fields.KODI));
+    if(!cols.length && anyCode) cols = ['KODI'];
+    columnHeaders = cols;
+
     const lines = data.recipients.map(r => {
-      if(r.code){
-        return `${r.name}, ${r.phone || ''}, ${r.code}`;
+      const f = r.fields || {};
+      if(cols.length){
+        const vals = cols.map(c => (c in f) ? f[c] : (c === 'KODI' ? (r.code || '') : ''));
+        return [r.name, r.phone || '', ...vals].join('\t');
       }
       return r.phone ? `${r.name}, ${r.phone}` : r.name;
     });
+
     document.getElementById('recipientsInput').value = lines.join('\n');
-    document.getElementById('listStatusMsg').textContent = `Orodha "${data.name}" imepakiwa (watu ${lines.length}).`;
+    const alama = ['[JINA]'].concat(cols.map(h => `[${h}]`)).join(' ');
+    document.getElementById('listStatusMsg').textContent =
+      `Orodha "${data.name}" imepakiwa (watu ${lines.length}). Alama: ${alama}`;
   }catch(err){
     console.error(err);
     alert('Imeshindikana kupakia orodha: ' + err.message);
@@ -184,17 +215,17 @@ if(msgInput){
 }
 
 // ============ PARSE RECIPIENTS ============
-// Kila mstari: jina, simu, kodi (kodi ni hiari)
+// Mstari: jina, simu  (au kwa Excel yenye nguzo za ziada: jina <tab> simu <tab> nguzo1 <tab> nguzo2 ...)
 function parseRecipients(){
   const raw = document.getElementById('recipientsInput').value;
   const lines = raw.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const headers = headersZaSasa();
 
   return lines.map(line => {
-    const parts = line.split(',').map(p => p.trim());
-    const name = parts[0] || '';
-    const phone = parts[1] || '';
-    const code = parts[2] || '';
-    return { name, phone, code };
+    const parts = (line.includes('\t') ? line.split('\t') : line.split(',')).map(p => p.trim());
+    const fields = {};
+    headers.forEach((h, i) => { fields[h] = parts[2 + i] || ''; });
+    return { name: parts[0] || '', phone: parts[1] || '', fields };
   }).filter(r => r.name.length > 0);
 }
 
@@ -228,14 +259,24 @@ async function sendOneSMS(sender, phone, message){
       })
     });
 
-    const data = await response.json();
+    let data = null;
+    try{ data = await response.json(); }catch(e){ data = null; }
     console.log("Beem API Response:", data);
 
-    return { ok: response.ok, data };
+    const ok = response.ok && !(data && data.successful === false);
+    return { ok, data };
   }catch(err){
     console.error("SMS Send Error:", err);
     return { ok: false, error: err.message };
   }
+}
+
+// Sababu ya kushindwa (kutoka Beem au mtandao)
+function sababuYaKushindwa(result){
+  if(result.error) return result.error;
+  const d = result.data || {};
+  const s = d.message || d.error || d.description || d.msg || (d.code ? 'code ' + d.code : '');
+  return String(s || '').slice(0, 60);
 }
 
 // ============ TUMA KWA WOTE ============
@@ -260,7 +301,21 @@ async function sendBulkSMS(){
     return;
   }
 
-  const ujumbeUnatumiaKodi = /\[KODI\]/i.test(messageTemplate);
+  // Alama zilizotumika kwenye ujumbe, mfano [JINA], [KIASI]
+  const used = [...new Set(
+    (messageTemplate.match(/\[([^\]]+)\]/g) || []).map(s => s.slice(1, -1).trim().toUpperCase())
+  )];
+  const known = ['JINA', ...headersZaSasa()];
+  const unknown = used.filter(u => !known.includes(u));
+  if(unknown.length){
+    alert(
+      'Alama hizi hazijulikani: ' + unknown.map(u => `[${u}]`).join(', ') + '.\n\n' +
+      'Alama zinazopatikana sasa: ' + known.map(k => `[${k}]`).join(' ') + '\n\n' +
+      'Pakia Excel yenye nguzo hizo, au ondoa alama hizo kwenye ujumbe.'
+    );
+    return;
+  }
+  const needed = used.filter(u => u !== 'JINA');
 
   const sendBtn = document.getElementById('sendBtn');
   const statusMsg = document.getElementById('statusMsg');
@@ -277,27 +332,33 @@ async function sendBulkSMS(){
     const r = validRecipients[i];
     statusMsg.textContent = `Inatuma ${i + 1}/${validRecipients.length}...`;
 
-    // Ujumbe unahitaji kodi lakini mtu huyu hana: usitume
-    if(ujumbeUnatumiaKodi && !r.code){
+    // Ujumbe unahitaji alama (mf. kiasi) lakini mtu huyu hana: usitume
+    const missing = needed.filter(h => !(r.fields[h] || '').length);
+    if(missing.length){
       failed++;
-      const rowNoCode = document.createElement('div');
-      rowNoCode.className = 'result-row';
-      rowNoCode.innerHTML = `
+      const rowMissing = document.createElement('div');
+      rowMissing.className = 'result-row';
+      rowMissing.innerHTML = `
         <span class="r-name">${escapeHtml(r.name)}</span>
         <span class="r-phone">${escapeHtml(r.phone)}</span>
-        <span class="r-status fail">✕ Hana kodi</span>
+        <span class="r-status fail">✕ Hana ${escapeHtml(missing.join(', '))}</span>
       `;
-      resultsTable.appendChild(rowNoCode);
+      resultsTable.appendChild(rowMissing);
       continue;
     }
 
-    const personalizedMessage = messageTemplate
-      .replace(/\[JINA\]/gi, r.name)
-      .replace(/\[KODI\]/gi, r.code);
+    let personalizedMessage = messageTemplate.replace(/\[JINA\]/gi, () => r.name);
+    needed.forEach(h => {
+      const re = new RegExp('\\[\\s*' + escapeRegExp(h) + '\\s*\\]', 'gi');
+      personalizedMessage = personalizedMessage.replace(re, () => r.fields[h]);
+    });
+
     const result = await sendOneSMS(sender, r.phone, personalizedMessage);
 
+    let sababu = '';
     if(result.ok){ sent++; } else {
       failed++;
+      sababu = sababuYaKushindwa(result);
       console.error(`SMS kwa ${r.name} (${r.phone}) imeshindwa:`, result.data || result.error);
     }
 
@@ -306,7 +367,7 @@ async function sendBulkSMS(){
     row.innerHTML = `
       <span class="r-name">${escapeHtml(r.name)}</span>
       <span class="r-phone">${escapeHtml(r.phone)}</span>
-      <span class="r-status ${result.ok ? 'ok' : 'fail'}">${result.ok ? '✓ Imetumwa' : '✕ Imeshindwa'}</span>
+      <span class="r-status ${result.ok ? 'ok' : 'fail'}" title="${escapeHtml(sababu)}">${result.ok ? '✓ Imetumwa' : '✕ Imeshindwa' + (sababu ? ': ' + escapeHtml(sababu) : '')}</span>
     `;
     resultsTable.appendChild(row);
   }
