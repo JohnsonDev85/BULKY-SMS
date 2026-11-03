@@ -1,7 +1,7 @@
 // ============ BEEM CONFIG ============
 // WEKA FUNGUO ZAKO MPYA HAPA (badilisha XXXX)
-const BEEM_API_KEY = "XXXX";      // WEKA KEY YAKO HAPA
-const BEEM_SECRET_KEY = "XXXX";   // WEKA SECRET YAKO HAPA
+const BEEM_API_KEY = "0fb90a5174db09ad";      // WEKA KEY YAKO HAPA
+const BEEM_SECRET_KEY = "MWRhMGI5MTljZjQ1ZjZhMjYzZThkYzRiZTM2YzU2ODA4MjQyMzZhZjU3YjIwNmI2Nzc0YTBmMDRlNjk3MzM4Yg== ";   // WEKA SECRET YAKO HAPA
 
 // ============ FIREBASE CONFIG ============
 const firebaseConfig = {
